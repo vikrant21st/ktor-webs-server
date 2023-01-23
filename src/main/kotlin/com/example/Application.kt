@@ -3,15 +3,23 @@ package com.example
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.Button
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Text
+import androidx.compose.material.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
@@ -30,12 +38,10 @@ import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.cio.*
 import io.ktor.server.engine.*
-import io.ktor.server.util.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.consumeEach
 import java.awt.event.MouseEvent
 import java.awt.event.WindowEvent
 import java.awt.event.WindowFocusListener
@@ -47,6 +53,8 @@ object ApplicationState {
 
     var client by mutableStateOf(false)
     val comChannel = Channel<Any>(onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    @Volatile
+    var comChannelCloseForMouseMove = false
 
     private const val port = 8082
     val shutdownUrl = "/${UUID.randomUUID().toString().replace("-", "").take(10)}"
@@ -82,8 +90,15 @@ object ApplicationState {
             ) {
                 client = true
                 send(code)
-                comChannel.consumeEach {
+                for (it in comChannel) {
                     send(it.toString())
+                    comChannelCloseForMouseMove = true
+                    val frame = incoming.receive()
+                    frame as Frame.Text
+                    if (frame.readText() == "ACK") {
+                        comChannelCloseForMouseMove = false
+                    } else
+                        error("No ACK from server")
                 }
             }
         }
@@ -148,7 +163,9 @@ fun ApplicationScope.ClientScreen() {
         { event: Any ->
             runBlocking {
                 delay(5)
-                scope.launch { ApplicationState.comChannel.send(event) }
+                scope.launch {
+                    ApplicationState.comChannel.send(event)
+                }
             }
         }
     }
@@ -182,34 +199,32 @@ fun ApplicationScope.ClientScreen() {
                 }
 
                 override fun windowLostFocus(e: WindowEvent?) {
-                    println("windowLostFocus")
+                    sendFn(ReleaseEvent)
                 }
             })
         }
         Box(
             modifier = Modifier.fillMaxSize().background(Color.Transparent)
-                .onPointerEvent(PointerEventType.Enter) {
-                    sendFn(it)
-                }
-                .onPointerEvent(PointerEventType.Exit) {
-                    sendFn(ReleaseEvent)
-                }
                 .onPointerEvent(PointerEventType.Move) {
                     val mouseEvent = it.nativeEvent as? MouseEvent
                     mouseEvent ?: return@onPointerEvent
-                    sendFn(
-                        MouseMove(
-                            Offset(mouseEvent.xOnScreen.toFloat(), mouseEvent.yOnScreen.toFloat())
+                    if (!ApplicationState.comChannelCloseForMouseMove)
+                        sendFn(
+                            MouseMove(
+                                Offset(
+                                    mouseEvent.xOnScreen.toFloat(),
+                                    mouseEvent.yOnScreen.toFloat()
+                                )
+                            )
                         )
-                    )
                 }
-                .onPointerEvent(PointerEventType.Press) {
+                .onPointerEvent(PointerEventType.Release) {
                     sendFn(
                         MouseClick.mousePressOrRelease(it, isPressing = false)
                             ?: return@onPointerEvent
                     )
                 }
-                .onPointerEvent(PointerEventType.Release) {
+                .onPointerEvent(PointerEventType.Press) {
                     sendFn(
                         MouseClick.mousePressOrRelease(it, isPressing = true)
                             ?: return@onPointerEvent

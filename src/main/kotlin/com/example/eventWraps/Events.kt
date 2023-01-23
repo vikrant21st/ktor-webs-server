@@ -59,7 +59,7 @@ class MouseClick(
                     pressed = splits[4].toBoolean(),
                 )
             }
-            return null
+            return mouseMove
         }
 
         fun mousePressOrRelease(
