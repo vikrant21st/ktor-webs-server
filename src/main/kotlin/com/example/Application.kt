@@ -1,6 +1,8 @@
 package com.example
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -15,6 +17,8 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
 import com.example.eventWraps.MouseClick
+import com.example.eventWraps.MouseMove
+import com.example.eventWraps.ReleaseEvent
 import com.example.plugins.configureAdministration
 import com.example.plugins.configureRouting
 import com.example.plugins.configureSecurity
@@ -32,6 +36,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
+import java.awt.event.MouseEvent
 import java.awt.event.WindowEvent
 import java.awt.event.WindowFocusListener
 import java.util.*
@@ -156,6 +161,7 @@ fun ApplicationScope.ClientScreen() {
         onCloseRequest = ::exitApplication,
         undecorated = true,
         transparent = true,
+        resizable = false,
         onKeyEvent = { keyEvent ->
             sendFn(keyEvent)
 
@@ -181,69 +187,36 @@ fun ApplicationScope.ClientScreen() {
             })
         }
         Box(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize().background(Color.Transparent)
                 .onPointerEvent(PointerEventType.Enter) {
                     sendFn(it)
                 }
                 .onPointerEvent(PointerEventType.Exit) {
-                    sendFn(it)
+                    sendFn(ReleaseEvent)
                 }
                 .onPointerEvent(PointerEventType.Move) {
-                    sendFn(it)
-                }
-                .onPointerEvent(PointerEventType.Press) {
-                    val mouseEvent = this.currentEvent.nativeEvent as? java.awt.event.MouseEvent
+                    val mouseEvent = it.nativeEvent as? MouseEvent
                     mouseEvent ?: return@onPointerEvent
                     sendFn(
-                        MouseClick(
-                            position = Offset(
-                                mouseEvent.xOnScreen.toFloat(),
-                                mouseEvent.yOnScreen.toFloat()
-                            ),
-                            button = mouseEvent.button,
-                            clickCount = mouseEvent.clickCount,
-                            pressed = true,
+                        MouseMove(
+                            Offset(mouseEvent.xOnScreen.toFloat(), mouseEvent.yOnScreen.toFloat())
                         )
+                    )
+                }
+                .onPointerEvent(PointerEventType.Press) {
+                    sendFn(
+                        MouseClick.mousePressOrRelease(it, isPressing = false)
+                            ?: return@onPointerEvent
                     )
                 }
                 .onPointerEvent(PointerEventType.Release) {
-                    val mouseEvent = this.currentEvent.nativeEvent as? java.awt.event.MouseEvent
-                    mouseEvent ?: return@onPointerEvent
                     sendFn(
-                        MouseClick(
-                            position = Offset(
-                                mouseEvent.xOnScreen.toFloat(),
-                                mouseEvent.yOnScreen.toFloat()
-                            ),
-                            button = mouseEvent.button,
-                            clickCount = mouseEvent.clickCount,
-                            pressed = false,
-                        )
+                        MouseClick.mousePressOrRelease(it, isPressing = true)
+                            ?: return@onPointerEvent
                     )
-                },
-        ) {
-            Surface(
-                color = Color.Transparent,
-                modifier = Modifier.fillMaxSize(),
-                border = BorderStroke(3.dp, Color.Red),
-            ) {
-                LaunchedEffect("sada") {/*
-                val robot = Robot()
-                delay(100)
-                robot.autoDelay = 1
-                robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
-                repeat(300) {
-                    robot.mouseMove(it + 400, it + 400)
                 }
-                robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK)
-                delay(1000)
-                robot.keyPress(java.awt.event.KeyEvent.VK_ALT)
-                robot.keyPress(java.awt.event.KeyEvent.VK_X)
-                robot.keyRelease(java.awt.event.KeyEvent.VK_X)
-                robot.keyRelease(java.awt.event.KeyEvent.VK_ALT)*/
-                }
-            }
-        }
+                .border(BorderStroke(3.dp, Color.Red)),
+        )
     }
 }
 
