@@ -161,14 +161,18 @@ fun main() = application {
 @Composable
 fun ApplicationScope.ClientScreen() {
     val scope = rememberCoroutineScope()
+    var lastKeyEvent by remember { mutableStateOf<KeyPress?>(null) }
     val sendFn = remember {
         { event: Any ->
-            runBlocking {
-                delay(5)
-                scope.launch {
-                    ApplicationState.comChannel.send(event)
+            if (event != lastKeyEvent)
+                runBlocking {
+                    delay(5)
+                    scope.launch {
+                        ApplicationState.comChannel.send(event)
+                        if (event is KeyPress)
+                            lastKeyEvent = event
+                    }
                 }
-            }
         }
     }
 
