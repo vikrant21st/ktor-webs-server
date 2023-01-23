@@ -43,12 +43,13 @@ object ApplicationState {
     var client by mutableStateOf(false)
     val comChannel = Channel<Any>(onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
+    private const val port = 8082
     val shutdownUrl = "/${UUID.randomUUID().toString().replace("-", "").take(10)}"
 
     fun startServer() {
         serverState = false
         scope.launch {
-            embeddedServer(CIO, port = 8080, host = "0.0.0.0", module = Application::module)
+            embeddedServer(CIO, port = port, host = "0.0.0.0", module = Application::module)
                 .start(wait = true)
         }
     }
@@ -58,7 +59,7 @@ object ApplicationState {
             HttpClient(io.ktor.client.engine.cio.CIO).get {
                 url {
                     host = "localhost"
-                    port = 8080
+                    port = ApplicationState.port
                     path(shutdownUrl)
                 }
             }
@@ -72,7 +73,7 @@ object ApplicationState {
                 install(WebSockets)
             }.webSocket(
                 method = HttpMethod.Get, host = host,
-                port = 8082, path = "/ws",
+                port = port, path = "/ws",
             ) {
                 client = true
                 send(code)
@@ -115,8 +116,8 @@ fun main() = application {
                         )
                     }
 
-                    var host by remember { mutableStateOf("192.168.1.") }
-                    var code by remember { mutableStateOf("192.168.1.") }
+                    var host by remember { mutableStateOf("192.168.1.19") }
+                    var code by remember { mutableStateOf("") }
                     TextField(host, onValueChange = { host = it })
                     TextField(code, onValueChange = { code = it })
 

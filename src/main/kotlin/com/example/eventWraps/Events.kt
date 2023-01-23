@@ -1,13 +1,27 @@
 package com.example.eventWraps
 
 import androidx.compose.ui.geometry.Offset
+import java.awt.event.InputEvent
 
 class MouseClick(
     val position: Offset,
-    val button: Int,
+    button: Int,
     val clickCount: Int,
     val pressed: Boolean,
 ) {
+    val button = when (button) {
+        java.awt.event.MouseEvent.BUTTON1,
+        java.awt.event.MouseEvent.BUTTON1_DOWN_MASK ->
+            InputEvent.BUTTON1_DOWN_MASK
+
+        java.awt.event.MouseEvent.BUTTON3,
+        java.awt.event.MouseEvent.BUTTON3_DOWN_MASK ->
+            InputEvent.BUTTON3_DOWN_MASK
+
+        else ->
+            button
+    }
+
     override fun toString() =
         "Mouse>>${position.x}-${position.y}>>${button}>>${clickCount}>>$pressed"
 
