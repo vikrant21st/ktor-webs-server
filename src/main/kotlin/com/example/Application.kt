@@ -24,6 +24,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
+import com.example.eventWraps.KeyPress
 import com.example.eventWraps.MouseClick
 import com.example.eventWraps.MouseMove
 import com.example.eventWraps.ReleaseEvent
@@ -42,6 +43,7 @@ import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.awt.event.WindowEvent
 import java.awt.event.WindowFocusListener
@@ -180,7 +182,13 @@ fun ApplicationScope.ClientScreen() {
         transparent = true,
         resizable = false,
         onKeyEvent = { keyEvent ->
-            sendFn(keyEvent)
+            val event = keyEvent.nativeKeyEvent as? KeyEvent
+            if (event != null) {
+                if (event.id == KeyEvent.KEY_PRESSED)
+                    sendFn(KeyPress(event.keyCode, isPressed = true))
+                else if (event.id == KeyEvent.KEY_RELEASED)
+                    sendFn(KeyPress(event.keyCode, isPressed = true))
+            }
 
             if (keyEvent.isAltPressed && keyEvent.key == Key.X) {
                 runBlocking {

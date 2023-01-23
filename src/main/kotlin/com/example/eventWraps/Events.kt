@@ -40,9 +40,6 @@ class MouseClick(
 
     companion object {
         fun fromString(string: String): MouseMove? {
-            if (!string.startsWith("Mouse"))
-                return null
-
             val splits = string.split(">>")
             if (splits.size < 2)
                 return null
@@ -71,12 +68,29 @@ class MouseClick(
             return MouseClick(
                 position = Offset(
                     mouseEvent.xOnScreen.toFloat(),
-                    mouseEvent.yOnScreen.toFloat()
+                    mouseEvent.yOnScreen.toFloat(),
                 ),
                 button = mouseEvent.button,
                 clickCount = mouseEvent.clickCount,
                 pressed = isPressing,
             )
+        }
+    }
+}
+
+class KeyPress(
+    val keyCode: Int,
+    val isPressed: Boolean,
+) {
+    override fun toString(): String = "Key>>$keyCode>>$isPressed"
+
+    companion object {
+        fun fromString(string: String): KeyPress? {
+            val splits = string.split(">>")
+            if (splits.size < 3)
+                return null
+            val (_, keyCode, isPressed) = splits
+            return KeyPress(keyCode.toInt(), isPressed.toBoolean())
         }
     }
 }
