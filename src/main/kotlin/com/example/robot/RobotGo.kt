@@ -18,7 +18,7 @@ object RobotGo {
         scope.async {
             if (command == ReleaseEvent.toString()) {
                 mouseButtonsPressed.forEach { robot.mouseRelease(it) }
-                keysPressed.forEach { robot.mouseRelease(it) }
+                keysPressed.forEach { robot.keyRelease(it) }
             } else if (command.startsWith("Mouse"))
                 MouseClick.fromString(command)?.run {
                     moveMouseTo(position)
