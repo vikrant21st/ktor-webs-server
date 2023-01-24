@@ -25,10 +25,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
-import com.example.eventWraps.KeyPress
-import com.example.eventWraps.MouseClick
-import com.example.eventWraps.MouseMove
-import com.example.eventWraps.ReleaseEvent
+import com.example.eventWraps.*
 import com.example.plugins.configureAdministration
 import com.example.plugins.configureRouting
 import com.example.plugins.configureSecurity
@@ -122,6 +119,8 @@ object ApplicationState {
                     }
                 }
             }.onFailure {
+                runCatching{ comChannel.close() }
+                client = false
                 error = it.toString()
                 it.printStackTrace()
             }
@@ -271,7 +270,9 @@ fun ApplicationScope.ClientScreen() {
                     )
                 }
                 .onPointerEvent(PointerEventType.Scroll) {
-                    println(it.nativeEvent)
+                    val event = it.nativeEvent as? java.awt.event.MouseWheelEvent
+                    event ?: return@onPointerEvent
+                    sendFn(MouseScroll(event.wheelRotation))
                 }
                 .border(BorderStroke(3.dp, Color.Red)),
         )

@@ -49,7 +49,9 @@ object RobotGo {
                 }
             else if (command.startsWith("Scroll"))
                 MouseScroll.fromString(command)?.run {
-                    robot.mouseWheel(amount)
+                    repeat(amount) {
+                        robot.mouseWheel(1)
+                    }
                 }
             else
                 println("NOT PARSED: $command")
