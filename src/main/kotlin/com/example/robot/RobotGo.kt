@@ -3,6 +3,7 @@ package com.example.robot
 import androidx.compose.ui.geometry.Offset
 import com.example.eventWraps.KeyPress
 import com.example.eventWraps.MouseClick
+import com.example.eventWraps.MouseScroll
 import com.example.eventWraps.ReleaseEvent
 import io.ktor.util.collections.*
 import kotlinx.coroutines.*
@@ -46,6 +47,12 @@ object RobotGo {
                         keysPressed -= keyCode
                     }
                 }
+            else if (command.startsWith("Scroll"))
+                MouseScroll.fromString(command)?.run {
+                    robot.mouseWheel(amount)
+                }
+            else
+                println("NOT PARSED: $command")
         }.await()
 
     private fun releaseMouse(button: Int) {

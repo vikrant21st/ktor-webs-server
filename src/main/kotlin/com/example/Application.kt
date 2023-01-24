@@ -19,6 +19,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
@@ -50,11 +51,14 @@ import java.awt.event.WindowFocusListener
 import java.util.*
 
 object ApplicationState {
+    var error: String? by mutableStateOf(null)
     var serverState: Boolean? by mutableStateOf(null)
     val scope = CoroutineScope(Dispatchers.Default)
 
     var client by mutableStateOf(false)
-    val comChannel = Channel<Any>(onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    var comChannel = Channel<Any>(onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        private set
+
     @Volatile
     var comChannelCloseForMouseMove = false
 
@@ -63,45 +67,63 @@ object ApplicationState {
 
     fun startServer() {
         serverState = false
+        error = null
         scope.launch {
-            embeddedServer(CIO, port = port, host = "0.0.0.0", module = Application::module)
-                .start(wait = true)
+            runCatching {
+                embeddedServer(CIO, port = port, host = "0.0.0.0", module = Application::module)
+                    .start(wait = true)
+            }.onFailure {
+                error = it.toString()
+                it.printStackTrace()
+            }
         }
     }
 
     fun stopServer() {
+        error = null
         scope.launch {
-            HttpClient(io.ktor.client.engine.cio.CIO).get {
-                url {
-                    host = "localhost"
-                    port = ApplicationState.port
-                    path(shutdownUrl)
+            runCatching {
+                HttpClient(io.ktor.client.engine.cio.CIO).get {
+                    url {
+                        host = "localhost"
+                        port = ApplicationState.port
+                        path(shutdownUrl)
+                    }
                 }
+            }.onFailure {
+                error = it.toString()
+                it.printStackTrace()
             }
         }
     }
 
     fun startClient(host: String, code: String) {
+        error = null
         scope.launch {
-
-            HttpClient(io.ktor.client.engine.cio.CIO) {
-                install(WebSockets)
-            }.webSocket(
-                method = HttpMethod.Get, host = host,
-                port = port, path = "/ws",
-            ) {
-                client = true
-                send(code)
-                for (it in comChannel) {
-                    send(it.toString())
-                    comChannelCloseForMouseMove = true
-                    val frame = incoming.receive()
-                    frame as Frame.Text
-                    if (frame.readText() == "ACK") {
-                        comChannelCloseForMouseMove = false
-                    } else
-                        error("No ACK from server")
+            runCatching {
+                HttpClient(io.ktor.client.engine.cio.CIO) {
+                    install(WebSockets)
+                }.webSocket(
+                    method = HttpMethod.Get, host = host,
+                    port = port, path = "/ws",
+                ) {
+                    comChannel = Channel {  }
+                    client = true
+                    send(code)
+                    for (it in comChannel) {
+                        send(it.toString())
+                        comChannelCloseForMouseMove = true
+                        val frame = incoming.receive()
+                        frame as Frame.Text
+                        if (frame.readText() == "ACK") {
+                            comChannelCloseForMouseMove = false
+                        } else
+                            error("No ACK from server")
+                    }
                 }
+            }.onFailure {
+                error = it.toString()
+                it.printStackTrace()
             }
         }
     }
@@ -152,6 +174,10 @@ fun main() = application {
                     ) {
                         Text("Client")
                     }
+
+                    if (ApplicationState.error != null) {
+                        Text(ApplicationState.error!!)
+                    }
                 }
             }
         }
@@ -176,11 +202,12 @@ fun ApplicationScope.ClientScreen() {
         }
     }
 
+    val windowState = rememberWindowState(
+        placement = WindowPlacement.Fullscreen,
+        position = WindowPosition(Alignment.Center),
+    )
     Window(
-        state = rememberWindowState(
-            placement = WindowPlacement.Fullscreen,
-            position = WindowPosition(Alignment.Center),
-        ),
+        state = windowState,
         onCloseRequest = ::exitApplication,
         undecorated = true,
         transparent = true,
@@ -191,17 +218,18 @@ fun ApplicationScope.ClientScreen() {
                 if (event.id == KeyEvent.KEY_PRESSED)
                     sendFn(KeyPress(event.keyCode, isPressed = true))
                 else if (event.id == KeyEvent.KEY_RELEASED)
-                    sendFn(KeyPress(event.keyCode, isPressed = true))
+                    sendFn(KeyPress(event.keyCode, isPressed = false))
             }
 
             if (keyEvent.isAltPressed && keyEvent.key == Key.X) {
-                runBlocking {
+                if (keyEvent.isCtrlPressed) {
                     ApplicationState.comChannel.close()
-                    delay(500)
-                    exitApplication()
+                } else {
+                    windowState.isMinimized = true
                 }
             }
-            true
+
+            !(keyEvent.isAltPressed && keyEvent.key == Key.Tab)
         },
     ) {
         remember {
@@ -241,6 +269,9 @@ fun ApplicationScope.ClientScreen() {
                         MouseClick.mousePressOrRelease(it, isPressing = true)
                             ?: return@onPointerEvent
                     )
+                }
+                .onPointerEvent(PointerEventType.Scroll) {
+                    println(it.nativeEvent)
                 }
                 .border(BorderStroke(3.dp, Color.Red)),
         )

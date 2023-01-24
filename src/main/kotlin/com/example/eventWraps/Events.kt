@@ -84,6 +84,19 @@ class KeyPress(
 ) {
     override fun toString(): String = "Key>>$keyCode>>$isPressed"
 
+    override fun hashCode(): Int {
+        var result = keyCode
+        result = 31 * result + isPressed.hashCode()
+        return result
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other)
+            return true
+
+        return other is KeyPress && keyCode == other.keyCode && isPressed == other.isPressed
+    }
+
     companion object {
         fun fromString(string: String): KeyPress? {
             val splits = string.split(">>")
@@ -91,6 +104,32 @@ class KeyPress(
                 return null
             val (_, keyCode, isPressed) = splits
             return KeyPress(keyCode.toInt(), isPressed.toBoolean())
+        }
+    }
+}
+
+class MouseScroll(
+   val amount: Int,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other)
+            return true
+
+        return other is MouseScroll && other.amount == amount
+    }
+
+    override fun hashCode(): Int {
+        return amount.hashCode()
+    }
+
+    override fun toString() = "Scroll>>$amount"
+
+    companion object {
+        fun fromString(string: String): MouseScroll? {
+            val splits = string.split(">>")
+            if (splits.size == 2)
+                return MouseScroll(splits[1].toInt())
+            return null
         }
     }
 }
