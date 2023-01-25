@@ -14,26 +14,37 @@ import kotlinx.coroutines.runBlocking
 import java.io.InputStream
 import java.util.*
 
-fun Application.configureSockets() {
+fun Application.configureSockets(code: String) {
     install(WebSockets) {
-       /* pingPeriod = Duration.ofSeconds(15)
-        timeout = Duration.ofSeconds(15)
-        maxFrameSize = Long.MAX_VALUE
-        masking = false*/
+        /* pingPeriod = Duration.ofSeconds(15)
+         timeout = Duration.ofSeconds(15)
+         maxFrameSize = Long.MAX_VALUE
+         masking = false*/
     }
-    
+
     routing {
-        webSocket("/kws") { // websocketSession
+        webSocket("/kws") {
+            val receivedCode = incoming.receive() as Frame.Text
+            if (receivedCode.readText() != code) {
+                close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Code error"))
+                return@webSocket
+            }
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val text = frame.readText()
                     RobotGo.processKeyPress(text)
-                    closeSocket(text)
+                    closeSocket("Success")
                 }
             }
         }
 
-        webSocket("/mws") { // websocketSession
+        webSocket("/mws") {
+            val receivedCode = incoming.receive() as Frame.Text
+            if (receivedCode.readText() != code) {
+                close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Code error"))
+                return@webSocket
+            }
+
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val text = frame.readText()

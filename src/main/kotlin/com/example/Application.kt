@@ -3,9 +3,7 @@ package com.example
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.*
 import androidx.compose.runtime.*
@@ -30,6 +28,7 @@ import com.example.plugins.configureSecurity
 import com.example.plugins.configureSockets
 import com.example.robot.RobotGo
 import io.ktor.client.*
+import io.ktor.client.call.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.*
 import io.ktor.http.*
@@ -46,12 +45,17 @@ import java.awt.event.WindowEvent
 import java.awt.event.WindowFocusListener
 import java.util.*
 
+enum class AppType {
+    Server, Client
+}
+
 object ApplicationState {
     var error: String? by mutableStateOf(null)
     var serverState: Boolean? by mutableStateOf(null)
-    val scope = CoroutineScope(Dispatchers.Default)
+    private val scope = CoroutineScope(Dispatchers.Default)
 
-    var client by mutableStateOf(false)
+    var app by mutableStateOf<AppType?>(null)
+
     var mouseChannel = Channel<MouseEvents>(onBufferOverflow = BufferOverflow.DROP_OLDEST)
         private set
     var keyChannel = Channel<KeyPress>(onBufferOverflow = BufferOverflow.SUSPEND)
@@ -63,12 +67,12 @@ object ApplicationState {
     private const val port = 8082
     val shutdownUrl = "/${UUID.randomUUID().toString().replace("-", "").take(10)}"
 
-    fun startServer() {
+    fun startServer(code: String) {
         serverState = false
         error = null
         scope.launch {
             runCatching {
-                embeddedServer(CIO, port = port, host = "0.0.0.0", module = Application::module)
+                embeddedServer(CIO, port = port, host = "0.0.0.0") { module(code) }
                     .start(wait = true)
             }.onFailure {
                 error = it.toString()
@@ -101,12 +105,24 @@ object ApplicationState {
             runCatching {
                 val httpClient = HttpClient(io.ktor.client.engine.cio.CIO) {
                     install(WebSockets)
+                    expectSuccess = false
                 }
+
+                val httpResponse = httpClient.get("http://$host:$port/ws")
+
+                if (httpResponse.status != HttpStatusCode.OK ||
+                    httpResponse.body<String>() != "ServerReady"
+                ) {
+                    error = "Cannot connect to server (${httpResponse.status})"
+                    return@launch
+                }
+
+                mouseChannel = Channel { }
+                keyChannel = Channel { }
+                app = AppType.Client
 
                 val job1 = launch {
                     httpClient.webSocket(host = host, port = port, path = "/mws") {
-                        mouseChannel = Channel { }
-                        client = true
                         send(code)
                         for (it in mouseChannel) {
                             send(it.toString())
@@ -115,16 +131,15 @@ object ApplicationState {
                             frame as Frame.Text
                             if (frame.readText() == "ACK") {
                                 comChannelCloseForMouseMove = false
-                            } else
+                            } else {
                                 error("No ACK from server")
+                            }
                         }
                     }
                 }
 
                 val job2 = launch {
                     httpClient.webSocket(host = host, port = port, path = "/kws") {
-                        keyChannel = Channel { }
-                        client = true
                         send(code)
                         for (it in keyChannel) {
                             send(it.toString())
@@ -134,13 +149,19 @@ object ApplicationState {
                 job1.join()
                 job2.join()
             }.onFailure {
-                client = false
+                app = null
                 error = it.toString()
                 it.printStackTrace()
             }
             runCatching { mouseChannel.close() }
             runCatching { keyChannel.close() }
         }
+    }
+
+    fun stopClient() {
+        mouseChannel.close()
+        keyChannel.close()
+        app = null
     }
 }
 
@@ -181,57 +202,11 @@ fun main1() = application {
 }
 
 fun main() = application {
-    if (ApplicationState.client)
-        ClientScreen()
-    else
-        Window(
-            onCloseRequest = ::exitApplication,
-            title = "Compose for Desktop",
-            state = rememberWindowState(width = 300.dp, height = 300.dp, position = WindowPosition(Alignment.Center))
-        ) {
-            MaterialTheme {
-                Column(Modifier.fillMaxSize(), Arrangement.spacedBy(5.dp)) {
-                    Button(
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        enabled = ApplicationState.serverState == null || ApplicationState.serverState == true,
-                        onClick = {
-                            when (ApplicationState.serverState) {
-                                null -> ApplicationState.startServer()
-                                true -> ApplicationState.stopServer()
-                                else -> {}
-                            }
-                        },
-                    ) {
-                        Text(
-                            when (ApplicationState.serverState) {
-                                true -> "Started.. click to stop"
-                                false -> "Starting server.. wait"
-                                else -> "Server"
-                            }
-                        )
-                    }
-
-                    var host by remember { mutableStateOf("192.168.1.19") }
-                    var code by remember { mutableStateOf("") }
-                    TextField(host, onValueChange = { host = it })
-                    TextField(code, onValueChange = { code = it })
-
-                    Button(
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        onClick = {
-                            ApplicationState.startClient(host, code)
-                        },
-                        enabled = ApplicationState.serverState == null,
-                    ) {
-                        Text("Client")
-                    }
-
-                    if (ApplicationState.error != null) {
-                        Text(ApplicationState.error!!)
-                    }
-                }
-            }
-        }
+    when (ApplicationState.app) {
+        AppType.Client -> ClientScreen()
+        AppType.Server -> ServerScreen()
+        else -> HomeScreen()
+    }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -266,15 +241,14 @@ fun ApplicationScope.ClientScreen() {
     )
     Window(
         state = windowState,
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = { ApplicationState.stopClient() },
         undecorated = true,
         transparent = true,
         resizable = false,
         onKeyEvent = { keyEvent ->
             if (keyEvent.isAltPressed && keyEvent.key == Key.X) {
                 if (keyEvent.isCtrlPressed) {
-                    ApplicationState.mouseChannel.close()
-                    ApplicationState.keyChannel.close()
+                    ApplicationState.stopClient()
                 } else {
                     windowState.isMinimized = true
                 }
@@ -338,10 +312,11 @@ fun ApplicationScope.ClientScreen() {
     }
 }
 
-fun Application.module() {
-    configureSockets()
+fun Application.module(code: String) {
+    configureSockets(code)
     configureAdministration()
     configureSecurity()
     configureRouting()
     ApplicationState.serverState = true
+    ApplicationState.app = AppType.Server
 }
