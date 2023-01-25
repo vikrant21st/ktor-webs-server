@@ -7,10 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
-import androidx.compose.material.TextField
+import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -23,6 +20,7 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
 import com.example.eventWraps.*
@@ -30,6 +28,7 @@ import com.example.plugins.configureAdministration
 import com.example.plugins.configureRouting
 import com.example.plugins.configureSecurity
 import com.example.plugins.configureSockets
+import com.example.robot.RobotGo
 import io.ktor.client.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.*
@@ -53,7 +52,9 @@ object ApplicationState {
     val scope = CoroutineScope(Dispatchers.Default)
 
     var client by mutableStateOf(false)
-    var comChannel = Channel<Any>(onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    var mouseChannel = Channel<MouseEvents>(onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        private set
+    var keyChannel = Channel<KeyPress>(onBufferOverflow = BufferOverflow.SUSPEND)
         private set
 
     @Volatile
@@ -98,31 +99,82 @@ object ApplicationState {
         error = null
         scope.launch {
             runCatching {
-                HttpClient(io.ktor.client.engine.cio.CIO) {
+                val httpClient = HttpClient(io.ktor.client.engine.cio.CIO) {
                     install(WebSockets)
-                }.webSocket(
-                    method = HttpMethod.Get, host = host,
-                    port = port, path = "/ws",
-                ) {
-                    comChannel = Channel {  }
-                    client = true
-                    send(code)
-                    for (it in comChannel) {
-                        send(it.toString())
-                        comChannelCloseForMouseMove = true
-                        val frame = incoming.receive()
-                        frame as Frame.Text
-                        if (frame.readText() == "ACK") {
-                            comChannelCloseForMouseMove = false
-                        } else
-                            error("No ACK from server")
+                }
+
+                val job1 = launch {
+                    httpClient.webSocket(host = host, port = port, path = "/mws") {
+                        mouseChannel = Channel { }
+                        client = true
+                        send(code)
+                        for (it in mouseChannel) {
+                            send(it.toString())
+                            comChannelCloseForMouseMove = true
+                            val frame = incoming.receive()
+                            frame as Frame.Text
+                            if (frame.readText() == "ACK") {
+                                comChannelCloseForMouseMove = false
+                            } else
+                                error("No ACK from server")
+                        }
                     }
                 }
+
+                val job2 = launch {
+                    httpClient.webSocket(host = host, port = port, path = "/kws") {
+                        keyChannel = Channel { }
+                        client = true
+                        send(code)
+                        for (it in keyChannel) {
+                            send(it.toString())
+                        }
+                    }
+                }
+                job1.join()
+                job2.join()
             }.onFailure {
-                runCatching{ comChannel.close() }
                 client = false
                 error = it.toString()
                 it.printStackTrace()
+            }
+            runCatching { mouseChannel.close() }
+            runCatching { keyChannel.close() }
+        }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+fun main1() = application {
+
+    Window(
+        state = rememberWindowState(
+            /*placement = WindowPlacement.Fullscreen,*/ position = WindowPosition(Alignment.TopCenter),
+            isMinimized = true,
+        ),
+        undecorated = true,
+        transparent = true,
+        onCloseRequest = { exitApplication() },
+        resizable = false,
+        alwaysOnTop = true,
+    ) {
+        Dialog(
+            state = rememberDialogState(
+                position = WindowPosition(Alignment.TopCenter),
+                size = DpSize(500.dp, 3.dp),
+            ),
+            onCloseRequest = { exitApplication() },
+            undecorated = true,
+        ) {
+            Surface(
+                border = BorderStroke(2.dp, Color.Green),
+                color = Color.Transparent,
+                modifier = Modifier.fillMaxSize()
+                    .onPointerEvent(PointerEventType.Enter) {
+                        RobotGo.isActive = !RobotGo.isActive
+                    },
+            ) {
+                Text("asd")
             }
         }
     }
@@ -187,15 +239,22 @@ fun main() = application {
 fun ApplicationScope.ClientScreen() {
     val scope = rememberCoroutineScope()
     var lastKeyEvent by remember { mutableStateOf<KeyPress?>(null) }
-    val sendFn = remember {
-        { event: Any ->
+    val sendMouseFn = remember {
+        { event: MouseEvents ->
+            runBlocking {
+                scope.launch {
+                    ApplicationState.mouseChannel.send(event)
+                }
+            }
+        }
+    }
+    val sendKeyFn = remember {
+        { event: KeyPress ->
             if (event != lastKeyEvent)
                 runBlocking {
-                    delay(5)
                     scope.launch {
-                        ApplicationState.comChannel.send(event)
-                        if (event is KeyPress)
-                            lastKeyEvent = event
+                        ApplicationState.keyChannel.send(event)
+                        lastKeyEvent = event
                     }
                 }
         }
@@ -212,19 +271,20 @@ fun ApplicationScope.ClientScreen() {
         transparent = true,
         resizable = false,
         onKeyEvent = { keyEvent ->
-            val event = keyEvent.nativeKeyEvent as? KeyEvent
-            if (event != null) {
-                if (event.id == KeyEvent.KEY_PRESSED)
-                    sendFn(KeyPress(event.keyCode, isPressed = true))
-                else if (event.id == KeyEvent.KEY_RELEASED)
-                    sendFn(KeyPress(event.keyCode, isPressed = false))
-            }
-
             if (keyEvent.isAltPressed && keyEvent.key == Key.X) {
                 if (keyEvent.isCtrlPressed) {
-                    ApplicationState.comChannel.close()
+                    ApplicationState.mouseChannel.close()
+                    ApplicationState.keyChannel.close()
                 } else {
                     windowState.isMinimized = true
+                }
+            } else {
+                val event = keyEvent.nativeKeyEvent as? KeyEvent
+                if (event != null) {
+                    if (event.id == KeyEvent.KEY_PRESSED)
+                        sendKeyFn(KeyPress(event.keyCode, isPressed = true))
+                    else if (event.id == KeyEvent.KEY_RELEASED)
+                        sendKeyFn(KeyPress(event.keyCode, isPressed = false))
                 }
             }
 
@@ -238,7 +298,7 @@ fun ApplicationScope.ClientScreen() {
                 }
 
                 override fun windowLostFocus(e: WindowEvent?) {
-                    sendFn(ReleaseEvent)
+                    sendMouseFn(ReleaseEvent)
                 }
             })
         }
@@ -248,23 +308,22 @@ fun ApplicationScope.ClientScreen() {
                     val mouseEvent = it.nativeEvent as? MouseEvent
                     mouseEvent ?: return@onPointerEvent
                     if (!ApplicationState.comChannelCloseForMouseMove)
-                        sendFn(
+                        sendMouseFn(
                             MouseMove(
-                                Offset(
-                                    mouseEvent.xOnScreen.toFloat(),
-                                    mouseEvent.yOnScreen.toFloat()
-                                )
+                                with(mouseEvent) {
+                                    Offset(xOnScreen.toFloat(), yOnScreen.toFloat())
+                                }
                             )
                         )
                 }
                 .onPointerEvent(PointerEventType.Release) {
-                    sendFn(
+                    sendMouseFn(
                         MouseClick.mousePressOrRelease(it, isPressing = false)
                             ?: return@onPointerEvent
                     )
                 }
                 .onPointerEvent(PointerEventType.Press) {
-                    sendFn(
+                    sendMouseFn(
                         MouseClick.mousePressOrRelease(it, isPressing = true)
                             ?: return@onPointerEvent
                     )
@@ -272,7 +331,7 @@ fun ApplicationScope.ClientScreen() {
                 .onPointerEvent(PointerEventType.Scroll) {
                     val event = it.nativeEvent as? java.awt.event.MouseWheelEvent
                     event ?: return@onPointerEvent
-                    sendFn(MouseScroll(event.wheelRotation))
+                    sendMouseFn(MouseScroll(event.wheelRotation))
                 }
                 .border(BorderStroke(3.dp, Color.Red)),
         )

@@ -23,20 +23,35 @@ fun Application.configureSockets() {
     }
     
     routing {
-        webSocket("/ws") { // websocketSession
+        webSocket("/kws") { // websocketSession
+            for (frame in incoming) {
+                if (frame is Frame.Text) {
+                    val text = frame.readText()
+                    RobotGo.processKeyPress(text)
+                    closeSocket(text)
+                }
+            }
+        }
+
+        webSocket("/mws") { // websocketSession
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val text = frame.readText()
                     RobotGo.process(text)
                     outgoing.send(Frame.Text("ACK"))
-                    if (text.equals("bye", ignoreCase = true)) {
-                        close(CloseReason(CloseReason.Codes.NORMAL, "Client said BYE"))
-                    }
+                    closeSocket(text)
                 }
             }
         }
     }
 }
+
+private suspend fun DefaultWebSocketServerSession.closeSocket(text: String) {
+    if (text.equals("bye", ignoreCase = true)) {
+        close(CloseReason(CloseReason.Codes.NORMAL, "Client said BYE"))
+    }
+}
+
 /**
  * Two mains are provided, you must first start EchoApp.Server, and then EchoApp.Client.
  * You can also start EchoApp.Server and then use a telnet client to connect to the echo server.

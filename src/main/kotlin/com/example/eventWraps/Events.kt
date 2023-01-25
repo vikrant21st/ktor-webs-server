@@ -5,13 +5,15 @@ import androidx.compose.ui.input.pointer.PointerEvent
 import java.awt.event.InputEvent
 import java.awt.event.MouseEvent
 
-object ReleaseEvent {
+sealed interface MouseEvents
+
+object ReleaseEvent: MouseEvents {
     override fun toString() = "Release"
 }
 
 open class MouseMove(
     val position: Offset,
-) {
+): MouseEvents {
     override fun toString() = "Mouse>>${position.x}-${position.y}"
 }
 
@@ -78,24 +80,11 @@ class MouseClick(
     }
 }
 
-class KeyPress(
+data class KeyPress(
     val keyCode: Int,
     val isPressed: Boolean,
 ) {
     override fun toString(): String = "Key>>$keyCode>>$isPressed"
-
-    override fun hashCode(): Int {
-        var result = keyCode
-        result = 31 * result + isPressed.hashCode()
-        return result
-    }
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other)
-            return true
-
-        return other is KeyPress && keyCode == other.keyCode && isPressed == other.isPressed
-    }
 
     companion object {
         fun fromString(string: String): KeyPress? {
@@ -110,7 +99,7 @@ class KeyPress(
 
 class MouseScroll(
    val amount: Int,
-) {
+): MouseEvents {
     override fun equals(other: Any?): Boolean {
         if (this === other)
             return true
