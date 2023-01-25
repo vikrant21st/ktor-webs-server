@@ -25,17 +25,15 @@ fun ApplicationScope.HomeScreen() {
     ) {
         MaterialTheme {
             Column(Modifier.fillMaxSize(), Arrangement.spacedBy(5.dp)) {
-                var host by remember { mutableStateOf("192.168.1.19") }
-                var code by remember { mutableStateOf((10..99).random().toString()) }
-                TextField(host, onValueChange = { host = it })
-                TextField(code, onValueChange = { code = it })
+                TextField(ApplicationState.host, onValueChange = { ApplicationState.host = it })
+                TextField(ApplicationState.code, onValueChange = { ApplicationState.code = it })
 
                 Button(
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     enabled = ApplicationState.serverState == null || ApplicationState.serverState == true,
                     onClick = {
                         when (ApplicationState.serverState) {
-                            null -> ApplicationState.startServer(code)
+                            null -> ApplicationState.startServer()
                             true -> ApplicationState.stopServer()
                             else -> {}
                         }
@@ -52,9 +50,7 @@ fun ApplicationScope.HomeScreen() {
 
                 Button(
                     modifier = Modifier.align(Alignment.CenterHorizontally),
-                    onClick = {
-                        ApplicationState.startClient(host, code)
-                    },
+                    onClick = ApplicationState::launchClient,
                     enabled = ApplicationState.serverState == null,
                 ) {
                     Text("Client")

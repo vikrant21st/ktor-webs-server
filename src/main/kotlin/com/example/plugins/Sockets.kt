@@ -1,5 +1,6 @@
 package com.example.plugins
 
+import com.example.ApplicationState
 import com.example.robot.RobotGo
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
@@ -14,7 +15,7 @@ import kotlinx.coroutines.runBlocking
 import java.io.InputStream
 import java.util.*
 
-fun Application.configureSockets(code: String) {
+fun Application.configureSockets() {
     install(WebSockets) {
         /* pingPeriod = Duration.ofSeconds(15)
          timeout = Duration.ofSeconds(15)
@@ -25,7 +26,7 @@ fun Application.configureSockets(code: String) {
     routing {
         webSocket("/kws") {
             val receivedCode = incoming.receive() as Frame.Text
-            if (receivedCode.readText() != code) {
+            if (receivedCode.readText() != ApplicationState.code) {
                 close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Code error"))
                 return@webSocket
             }
@@ -40,7 +41,7 @@ fun Application.configureSockets(code: String) {
 
         webSocket("/mws") {
             val receivedCode = incoming.receive() as Frame.Text
-            if (receivedCode.readText() != code) {
+            if (receivedCode.readText() != ApplicationState.code) {
                 close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Code error"))
                 return@webSocket
             }
